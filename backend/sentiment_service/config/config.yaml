@@ -1,0 +1,9 @@
+kafka:
+  broker_url:
+  queue_x:
+  queue_y:
+
+redis:
+  url:
+
+response_timeout: 10
