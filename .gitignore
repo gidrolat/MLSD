@@ -293,4 +293,6 @@ pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/pycharm,python,redis
 backend/sentiment_service/config/test_config.yaml
+backend/predict_service/config/test_config.yaml
 .idea
+tmp/*

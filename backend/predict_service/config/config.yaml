@@ -1,0 +1,7 @@
+kafka:
+  broker: "localhost:9092"
+  group_id: "sentiment-analysis-group"
+  topics:
+    input: "topicX"
+    output: "topicY"
+  auto_offset_reset: "earliest"
