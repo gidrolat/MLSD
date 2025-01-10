@@ -2,13 +2,14 @@ import asyncio
 import hashlib
 import json
 import logging
-
+import aioredis
 import yaml
 from aiokafka import AIOKafkaProducer, AIOKafkaConsumer
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 
+# Функция для хеширования строки
 def hash_string(input_string):
     return hashlib.sha256(input_string.encode('utf-8')).hexdigest()
 
@@ -25,11 +26,13 @@ KAFKA_BROKER_URL = config["kafka"]["broker_url"]
 OUT_QUERY = config["kafka"]["output_query"]
 IN_QUERY = config["kafka"]["input_query"]
 RESPONSE_TIMEOUT = config.get("response_timeout", 10)
+REDIS_URL = config["redis"]["url"]
 
 app = FastAPI()
 
 producer = None
 consumer = None
+redis = None  # Redis клиент
 
 # Глобальный словарь для хранения ожиданий запросов
 pending_requests = {}
@@ -41,7 +44,7 @@ class InputData(BaseModel):
 
 @app.on_event("startup")
 async def startup_event():
-    global producer, consumer
+    global producer, consumer, redis
     LOGGER.info("Starting up")
 
     # Настраиваем Kafka Producer
@@ -60,18 +63,24 @@ async def startup_event():
     )
     await consumer.start()
 
+    # Настроим Redis
+    redis = aioredis.from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
+
     # Создаем фоновую задачу для обработки сообщений из Kafka
     asyncio.create_task(consume_kafka())
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    global producer, consumer
+    global producer, consumer, redis
     LOGGER.info("Shutting down")
 
     # Останавливаем Kafka Producer и Consumer
     await producer.stop()
     await consumer.stop()
+
+    # Закрываем соединение с Redis
+    await redis.close()
 
 
 async def consume_kafka():
@@ -96,6 +105,12 @@ async def process_data(data: InputData):
     LOGGER.info(f"Processing data: {data.value}")
     key = f"request-{hash_string(data.value)}"
 
+    # Проверяем, есть ли результат в Redis
+    cached_result = await redis.get(key)
+    if cached_result:
+        LOGGER.info("Returning cached result")
+        return json.loads(cached_result)
+
     # Отправляем сообщение в Kafka
     try:
         await producer.send_and_wait(OUT_QUERY, {"key": key, "value": data.value})
@@ -108,6 +123,9 @@ async def process_data(data: InputData):
 
     try:
         result = await asyncio.wait_for(future, timeout=RESPONSE_TIMEOUT)
+
+        # Кешируем результат в Redis
+        await redis.setex(key, 60, json.dumps(result))  # Кешируем на 60 секунд
         return result
     except asyncio.TimeoutError:
         pending_requests.pop(key, None)
