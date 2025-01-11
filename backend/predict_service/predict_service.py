@@ -5,6 +5,7 @@ import logging
 import nltk
 import yaml
 from confluent_kafka import Consumer, Producer
+from confluent_kafka.admin import AdminClient, NewTopic
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
 # Загрузка словарей VADER
@@ -43,6 +44,20 @@ def analyze_sentiment(text: str) -> dict:
 
 def consume_and_process(svc_config: dict):
     kafka_config = svc_config["kafka"]
+
+    # Инициализация топиков
+    a = AdminClient({"bootstrap.servers": kafka_config["broker"]})
+    new_topics = [NewTopic(topic, num_partitions=1, replication_factor=1) for topic in [
+        kafka_config["topics"]["input"], kafka_config["topics"]["output"]]
+    ]
+    fs = a.create_topics(new_topics)
+
+    for topic, f in fs.items():
+        try:
+            f.result()
+            logging.info("Topic {} created".format(topic))
+        except Exception as e:
+            logging.warning("Failed to create topic {}: {}".format(topic, e))
 
     consumer_conf = {
         "bootstrap.servers": kafka_config["broker"],

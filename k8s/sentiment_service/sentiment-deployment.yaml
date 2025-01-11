@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentiment-service
+  labels:
+    app: sentiment-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sentiment-service
+  template:
+    metadata:
+      labels:
+        app: sentiment-service
+    spec:
+      containers:
+      - name: sentiment-service
+        image: sentiment_service:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8000
+        env:
+        - name: KAFKA_BROKER_URL
+          value: "kafka:9092"
+        - name: REDIS_URL
+          value: "redis://redis:6379"

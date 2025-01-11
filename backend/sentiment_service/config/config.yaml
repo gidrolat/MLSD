@@ -1,9 +1,9 @@
 kafka:
-  broker_url: "localhost:9092"
+  broker_url: "kafka:9092"
   input_query: "topicY"
   output_query: "topicX"
 
 redis:
-  url: "redis://localhost:6379"
+  url: "redis://redis:6379"
 
 response_timeout: 10

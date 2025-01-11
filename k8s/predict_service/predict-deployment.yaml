@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: predict-service
+  labels:
+    app: predict-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: predict-service
+  template:
+    metadata:
+      labels:
+        app: predict-service
+    spec:
+      containers:
+      - name: predict-service
+        image: predict_service:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 5000
+        env:
+        - name: KAFKA_BROKER_URL
+          value: "kafka:9092"

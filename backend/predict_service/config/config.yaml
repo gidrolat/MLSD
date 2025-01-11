@@ -1,5 +1,5 @@
 kafka:
-  broker: "localhost:9092"
+  broker: "kafka:9092"
   group_id: "sentiment-analysis-group"
   topics:
     input: "topicX"
