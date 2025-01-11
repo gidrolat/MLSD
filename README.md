@@ -28,12 +28,107 @@
 ![image](https://github.com/user-attachments/assets/7c38676f-c84f-4261-9b7e-c6a1292cd37a)
 
 
-
-
-
 ### Описание
 Данная архитектура была выбрана с целью оптимизации запросов от пользователей. 
-* Sentiment service - использует Fast- Api
+* Sentiment service - использует FastApi - производительный фреймворк без лишних инструментов "из коробки", что подходит
+для решения небольшой задачи.
 * Predict service - использует модель VADER для анализа тональности текста. 
-* Kafka -
-* Redis - использовано для кеширования повторяющихся запросов. Удобен в силу отсутвия тяжелых данных. 
+* Kafka - используется как брокер сообщений (в данном случае для коммуникации двух сервисов). Благодаря ей достигается
+**асинхронность**, надежность доставки сообщений, задел на будущую масштабируемость, производительность.
+* Redis - использовано для кеширования повторяющихся запросов. Удобен в силу отсутвия тяжелых данных.
+
+## Описание сетей (DMZ, Secure zone)
+
+### DMZ (Demilitarized Zone)
+
+- Сервисы: NGINX Ingress Controller
+- Функция:
+  - Обработка внешних HTTP/HTTPS-запросов, их маршрутизация к внутренним сервисам Kubernetes.
+  - Управление SSL/TLS-сертификатами для шифрования соединений.
+- Открытые порты:
+  - `80` (HTTP) — для незашифрованных запросов.
+  - `443` (HTTPS) — для зашифрованных запросов.
+- Безопасность:
+  - SSL/TLS для шифрования трафика.
+  - Ограничение источников запросов (через IP-блоки, сетевые политики).
+  - Лимитирование числа запросов для предотвращения DoS-атак.
+  - Ограничение доступа к внутренним зонам через правила маршрутизации.
+
+Так же вместо Ingress Controller можно использовать `port-forward` на sentiment-service (рекомендуется только
+в целях локальной разработки/дебага, т.к. лишаемся всех плюсов из раздела "Безопасность").
+
+### Secure Zone
+
+- Сервисы: `sentiment-service`, `predict-service`, `redis`, `kafka`
+- Функция:
+  - Обработка бизнес-логики и выполнение запросов, перенаправленных через Ingress Controller.
+- Открытые порты:
+  - `8000` — sentiment-service (backend)
+  - `6379` — Redis
+  - `9092` — Kafka
+- Безопасность:
+  - Сетевые политики Kubernetes для ограничения трафика между подами.
+  - Аутентификация и авторизация запросов, перенаправленных через Ingress Controller.
+  - Потенциальные средства защиты для Redis (пароль) и Kafka (сертификаты, порт для защищенных соединений)
+
+### Общее взаимодействие между зонами:
+
+1. DMZ:
+   - Получает внешние запросы и проверяет их с помощью правил маршрутизации, настроенных в Ingress.
+   - Проксирует запросы к сервисам в Secure Zone.
+2. Secure zone:
+   - Получает запросы через внутренний сервис Kubernetes.
+   - Ограничивает доступ к своим ресурсам с помощью сетевых политик.
+   - Возвращает ответ обратно через Ingress Controller.
+
+## Билд и деплой
+
+Requirements:
+- [Redis](https://redis.io/docs/latest/operate/oss_and_stack/install/)
+- [Kafka](https://kafka.apache.org/quickstart)
+- [Docker](https://docs.docker.com/engine/install/)
+- [Python](https://www.python.org/downloads/) (v10 and higher)
+- [Minikube & kubectl](https://minikube.sigs.k8s.io/docs/start)
+
+1. **Сборка образов микросервисов**
+
+    Перед сборкой необходимо удостовериться, что `minikube` запущен, а так же терминал настроен на работу с локальным
+    Docker-демоном, запущенным внутри кластера Minikube:
+    
+    ```commandline
+    minikube start --driver=docker
+    ```
+    ```commandline
+    eval $(minikube docker-env)
+    ```
+    
+    Теперь можно собрать образы:
+    
+    ```commandline
+    docker build -t sentiment_service:latest backend/sentiment_service
+    docker build -t predict_service:latest backend/predict_service
+    ```
+
+2. **Применяем манифесты для деплоя в k8s**
+
+    ```commandline
+    kubectl apply -f k8s/redis/
+    kubectl apply -f k8s/zookeeper/
+    kubectl apply -f k8s/kafka/
+    kubectl apply -f k8s/predict-service/
+    kubectl apply -f k8s/sentiment-service/
+    ```
+
+3. **Доступ к backend:**
+
+- Опция 1 - port-forward (подходит для локальной разработки, дебага, может даже для дев стенда):
+  ```commandline
+  kubectl port-forward <sentimen-service-pod-name> <N>:8000
+  ```
+  После чего sentiment-service будет доступен по URL `localhost:N`
+
+
+- Опция 2 - Ingress controller (подходит для прода):
+    ```commandline
+    kubectl apply -f k8s/ingress/
+    ```
